@@ -19,6 +19,7 @@ use crate::blocks::{Block, ConfigBlock, Update};
 use crate::config::SharedConfig;
 use crate::de::deserialize_duration;
 use crate::errors::*;
+use crate::input::{I3BarEvent, MouseButton};
 use crate::scheduler::Task;
 use crate::util::FormatTemplate;
 use crate::widgets::text::TextWidget;
@@ -449,6 +450,7 @@ pub struct KeyboardLayout {
     output: TextWidget,
     monitor: Box<dyn KeyboardLayoutMonitor>,
     update_interval: Option<Duration>,
+    on_click: Option<String>,
     format: FormatTemplate,
     mappings: HashMap<String, String>,
 }
@@ -491,12 +493,17 @@ impl ConfigBlock for KeyboardLayout {
             output,
             monitor,
             update_interval,
+            on_click: None,
             format: FormatTemplate::from_string(&block_config.format).block_error(
                 "keyboard_layout",
                 "Invalid format specified for keyboard_layout",
             )?,
             mappings: block_config.mappings,
         })
+    }
+
+    fn override_on_click(&mut self) -> Option<&mut Option<String>> {
+        Some(&mut self.on_click)
     }
 }
 
@@ -523,5 +530,21 @@ impl Block for KeyboardLayout {
 
     fn view(&self) -> Vec<&dyn I3BarWidget> {
         vec![&self.output]
+    }
+
+    fn click(&mut self, event: &I3BarEvent) -> Result<()> {
+        if event.button == MouseButton::Left {
+            if let Some(ref on_click) = self.on_click {
+                Command::new("sh")
+                    .args(&["-c", on_click])
+                    .output()
+                    .block_error("keyboard layout", "Failed to run `on click` command")
+                    .and_then(|_| -> Result<Option<Update>> {
+                        self.update()
+                            .block_error("keyboard layout", "could not update")
+                    })?;
+            }
+        }
+        Ok(())
     }
 }
